@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>M5 Mission Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            background: #0f172a;
+            color: white;
+            font-family: Arial;
+            padding: 20px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        canvas {
+            max-height: 250px;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>🚀 M5 Dashboard</h1>
+
+<div class="grid">
+
+<div class="card">
+<h3>Summary</h3>
+<div id="summary"></div>
+</div>
+
+<div class="card">
+<h3>Select Run</h3>
+<select id="runSelect"></select>
+<pre id="details"></pre>
+</div>
+
+<div class="card">
+<canvas id="gChart"></canvas>
+</div>
+
+<div class="card">
+<canvas id="fuelChart"></canvas>
+</div>
+
+<div class="card">
+<h3>🚀 Visualizer</h3>
+<canvas id="simCanvas" width="300" height="400"></canvas><br>
+<button onclick="playSim()">▶ Play</button>
+</div>
+
+</div>
+
+<script>
+
+let data;
+
+fetch("results.json")
+.then(res => res.json())
+.then(d => {
+    data = d;
+
+    document.getElementById("summary").innerHTML =
+        `Success: ${d.summary.success_rate}/${d.summary.total_runs}`;
+
+    const select = document.getElementById("runSelect");
+
+    d.runs.forEach(r => {
+        const opt = document.createElement("option");
+        opt.value = r.run;
+        opt.text = "Run " + r.run;
+        select.appendChild(opt);
+    });
+
+    select.addEventListener("change", () => {
+        const run = d.runs[select.value - 1];
+        document.getElementById("details").textContent =
+            JSON.stringify(run, null, 2);
+    });
+
+    select.dispatchEvent(new Event("change"));
+
+    new Chart(document.getElementById("gChart"), {
+        type: "line",
+        data: {
+            labels: d.runs.map(r => r.run),
+            datasets: [{
+                label: "g",
+                data: d.runs.map(r => r.g)
+            }]
+        }
+    });
+
+    new Chart(document.getElementById("fuelChart"), {
+        type: "line",
+        data: {
+            labels: d.runs.map(r => r.run),
+            datasets: [{
+                label: "fuel",
+                data: d.runs.map(r => r.fuel)
+            }]
+        }
+    });
+});
+
+
+let traj = [];
+let idx = 0;
+
+function playSim() {
+    const sel = document.getElementById("runSelect");
+    traj = data.runs[sel.value - 1].trajectory;
+    idx = 0;
+    animate();
+}
+
+function animate() {
+    if (idx >= traj.length) return;
+    draw(traj[idx]);
+    idx++;
+    requestAnimationFrame(animate);
+}
+
+function draw(s) {
+    const c = document.getElementById("simCanvas");
+    const ctx = c.getContext("2d");
+
+    ctx.clearRect(0,0,c.width,c.height);
+
+    let x = c.width/2 + s.x * 3;
+    let y = c.height - s.h * 3 - 20;
+
+    ctx.fillStyle = "#444";
+    ctx.fillRect(0,c.height-10,c.width,10);
+
+    ctx.fillStyle = "#38bdf8";
+    ctx.fillRect(x-5,y-20,10,20);
+}
+
+</script>
+
+</body>
+</html>
