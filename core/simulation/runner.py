@@ -7,7 +7,11 @@ import random
 params = {
     "m": 1.0,
     "g": 9.81,
-    "T_max": 40.0
+    "T_max": 40.0,
+
+    # Landing gear (NEW)
+    "k": 800.0,   # stiffness
+    "c": 80.0     # damping
 }
 
 dt = 0.01
@@ -24,17 +28,19 @@ state = {
 t = 0.0
 thrust_actual = 0.0
 
-# gains
-k_v = 0.8        # mid-altitude velocity damping
-k_h = 0.3        # position pull
-k_v_final = 2.2  # stronger near ground
+# control gains
+k_v = 0.8
+k_h = 0.3
+k_v_final = 2.2
 
-# final approach settings
 h_switch = 0.5
-target_v = -0.35  # m/s (gentle descent)
+target_v = -0.35
 
-print("Hybrid control with velocity-targeted final approach...\n")
+print("M3: Landing gear simulation...\n")
 
+# -----------------------
+# Simulation Loop
+# -----------------------
 while t < t_final:
 
     h = state["h"]
@@ -56,12 +62,9 @@ while t < t_final:
     if measured_h <= 40:
 
         if measured_h < h_switch:
-            # -------- FINAL APPROACH (velocity target) --------
-            # drive (v -> target_v)
             a_total = -k_v_final * (measured_v - target_v)
 
         else:
-            # -------- HYBRID (physics + feedback) --------
             if measured_h > 1e-3:
                 a_physics = (measured_v**2) / (2 * measured_h)
             else:
@@ -73,8 +76,6 @@ while t < t_final:
             a_total = a_physics + a_feedback + a_position
 
         thrust_cmd = m * (a_total + g)
-
-        # clamp to actuator limits
         thrust_cmd = max(0.0, min(thrust_cmd, T_max))
 
     else:
@@ -93,20 +94,44 @@ while t < t_final:
     thrust_effective = thrust_actual + m * disturbance
 
     # -----------------------
+    # LANDING GEAR FORCE (NEW)
+    # -----------------------
+    k = params["k"]
+    c = params["c"]
+
+    if state["h"] < 0:
+        compression = -state["h"]  # positive
+        gear_force = k * compression - c * state["v"]
+    else:
+        gear_force = 0.0
+
+    # -----------------------
+    # TOTAL FORCE
+    # -----------------------
+    total_thrust = thrust_effective + gear_force
+
+    # -----------------------
     # STEP
     # -----------------------
-    state = step(state, thrust_effective, dt, params)
+    state = step(state, total_thrust, dt, params)
 
-    # debug every ~0.5 s
+    # -----------------------
+    # DEBUG
+    # -----------------------
     if int(t * 100) % 50 == 0:
-        print(f"t={t:.2f}, h={h:.2f}, v={v:.2f}, T_cmd={thrust_cmd:.2f}, T_act={thrust_actual:.2f}")
+        print(f"t={t:.2f}, h={h:.2f}, v={v:.2f}, gearF={gear_force:.2f}")
 
     # -----------------------
-    # TOUCHDOWN CONDITION
+    # STOP CONDITION
     # -----------------------
-    if state["h"] <= 0.05:
-        print("\nTouched down (within tolerance)")
-        print("Impact velocity:", state["v"])
+    if state["h"] < -0.5:  # too deep compression
+        print("\nHard crash (structure failed)")
+        break
+
+    # near rest condition
+    if abs(state["h"]) < 0.02 and abs(state["v"]) < 0.1:
+        print("\nStable landing achieved")
+        print("Final compression:", -state["h"])
         break
 
     t += dt
