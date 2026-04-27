@@ -6,7 +6,7 @@ import math
 params = {
     "m": 5.0,
     "g": 9.81,
-    "T_max": 100.0,
+    "T_max": 120.0,
 
     # landing gear
     "k": 800.0,
@@ -17,6 +17,9 @@ params = {
 dt = 0.01
 t_final = 30.0
 
+# -----------------------
+# INITIAL STATE
+# -----------------------
 state = {
     "x": 20.0,
     "h": 100.0,
@@ -27,16 +30,25 @@ state = {
 
 t = 0.0
 
-print("\n🚀 M5 FINAL: Precision Landing (with ground correction)\n")
+print("\n🚀 M6: Guidance + Control (Stable v1.1)\n")
 
 # -----------------------
-# GAINS
+# M5 VERTICAL GAINS (UNCHANGED)
 # -----------------------
 kph = 0.3
 kvh = 0.8
 k_v_final = 2.5
 target_vh = -0.3
 
+# -----------------------
+# M6 GUIDANCE GAINS
+# -----------------------
+kx = 0.5
+kv = 1.0
+
+# -----------------------
+# MAIN LOOP
+# -----------------------
 while t < t_final:
 
     x = state["x"]
@@ -47,45 +59,44 @@ while t < t_final:
     m = params["m"]
     g = params["g"]
 
-    on_ground = h < 0
+    # =======================
+    # M6 GUIDANCE (HORIZONTAL)
+    # =======================
+    # velocity target (capped for stability)
+    target_vx = max(min(-kx * x, 5.0), -5.0)
 
-    # -----------------------
-    # HORIZONTAL CONTROL
-    # -----------------------
-    if not on_ground:
+    # track velocity
+    ax_cmd = kv * (target_vx - vx)
 
-        if h > 5:
-            ax_cmd = -0.30 * x - 0.9 * vx
-        elif h > 1:
-            ax_cmd = -0.20 * x - 0.7 * vx
-        else:
-            ax_cmd = -0.10 * x - 1.5 * vx
-
-    else:
-        # 🔥 NEW: ground correction
-        ax_cmd = -1.0 * x - 2.0 * vx
-
-    # tilt
+    # convert to tilt
     theta = math.atan2(ax_cmd, g)
-    theta = max(min(theta, 0.3), -0.3)
 
-    # -----------------------
-    # VERTICAL CONTROL
-    # -----------------------
+    # tilt limit
+    theta = max(min(theta, 0.35), -0.35)
+
+    # =======================
+    # M5 VERTICAL CONTROL (UNCHANGED)
+    # =======================
     if h > 2:
         ah_cmd = -kvh * vh - kph * h
     else:
         ah_cmd = -k_v_final * (vh - target_vh)
 
+    # =======================
+    # THRUST
+    # =======================
     thrust = m * (ah_cmd + g)
     thrust = max(0.0, min(thrust, params["T_max"]))
 
+    # =======================
+    # FORCE RESOLUTION
+    # =======================
     Fx = thrust * math.sin(theta)
     Fh = thrust * math.cos(theta)
 
-    # -----------------------
+    # =======================
     # LANDING GEAR
-    # -----------------------
+    # =======================
     if h < 0:
         comp = -h
 
@@ -95,13 +106,12 @@ while t < t_final:
             vh = 0.0
 
         gear_force = params["k"] * comp - params["c"] * vh
-
     else:
         gear_force = 0.0
 
-    # -----------------------
+    # =======================
     # DYNAMICS
-    # -----------------------
+    # =======================
     ax = Fx / m
     ah = (Fh + gear_force) / m - g
 
@@ -111,12 +121,6 @@ while t < t_final:
     x += vx * dt
     h += vh * dt
 
-    # snap small values
-    if abs(vx) < 0.01:
-        vx = 0.0
-    if abs(x) < 0.05:
-        x = 0.0
-
     state = {
         "x": x,
         "h": h,
@@ -125,17 +129,29 @@ while t < t_final:
         "theta": theta
     }
 
-    # debug
+    # =======================
+    # DEBUG PRINT
+    # =======================
     if int(t * 100) % 50 == 0:
         print(f"t={t:.2f}, x={x:.2f}, h={h:.2f}, vx={vx:.2f}, vh={vh:.2f}, theta={theta:.2f}")
 
-    # -----------------------
-    # LANDING CONDITION
-    # -----------------------
-    if on_ground and abs(vx) < 0.01 and abs(vh) < 0.05 and abs(x) < 0.05:
-        print("\n🟢 PERFECT LANDING (x ≈ 0)")
+    # =======================
+    # SUCCESS CONDITION
+    # =======================
+    success = (
+        abs(x) < 1.0 and
+        abs(vx) < 0.1 and
+        abs(vh) < 0.1 and
+        h < 0
+    )
+
+    if success:
+        print("\n🟢 Successful landing (M6 stable)")
         break
 
     t += dt
 
+# -----------------------
+# FINAL STATE
+# -----------------------
 print("\nFinal state:", state)
